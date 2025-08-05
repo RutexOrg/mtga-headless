@@ -1,40 +1,65 @@
-import fetch from 'node-fetch';
-import dotenv from "dotenv"
+import dotenv from "dotenv";
+import axios, { Axios } from 'axios';
+import { ResourceOwnerPassword } from 'simple-oauth2';
 dotenv.config();
 
-
 export default class ReverseApi {
-    private endPointUrl: string = "";
-    private loginURL = "https://api.platform.wizards.com/auth/oauth/token";
+    private authClient: ResourceOwnerPassword;
+    public client!: Axios;
 
+    private static API_BASE: string = "https://api.platform.wizards.com"
     private static ID: string = "N8QFG8NEBJ5T35FB";
     private static SECRET: string = "VMK1RE8YK6YR4EABJU91";
+    private static LANG: string = "en-US";
+
+    private accessToken: string = "";
 
     constructor() {
+        const config = {
+            client: {
+                id: ReverseApi.ID,
+                secret: ReverseApi.SECRET
+            },
+            auth: {
+                tokenHost: ReverseApi.API_BASE,
+                tokenPath: '/auth/oauth/token'
+            },
+        };
+
+        this.authClient = new ResourceOwnerPassword(config);
     }
 
-    public async login(login: string, password: string) {
-
-        const body = new URLSearchParams({
-            grant_type: 'password',
-            username: login,
-            password: password
-        });
-
-        const response = await fetch(this.loginURL, {
-            method: 'POST',
+    private createHttpClient() {
+        this.client = axios.create({
+            baseURL: ReverseApi.API_BASE + "/",
             headers: {
-                'Authorization': `Basic ` + Buffer.from(`${ReverseApi.ID}:${ReverseApi.SECRET}`).toString('base64'),
-                'Content-Type': 'application/x-www-form-urlencoded'
+                "Authorization": "Bearer " + this.accessToken,
+                "Accept-Language": ReverseApi.LANG
             },
-            body: body.toString()
+            validateStatus(status) {
+                const validStatus = new Set([400]);
+                return validStatus.has(status)
+            },
         });
+    }
 
-        return response.json();
+    public async login(username: string, password: string): Promise<void> {
+        const tokenParams = {
+            username: username,
+            password: password,
+        };
+
+        const accessToken = await this.authClient.getToken(tokenParams);
+        this.accessToken = accessToken.token.access_token as string;
+        this.createHttpClient();
+
+        console.log(accessToken.token);
+    }
+
+    public async reedemCode(code: string) {
+        return (await this.client.get("redemption/code/" + code)).data
     }
 }
 
-const client = new ReverseApi();
-const resp = await client.login(process.env.USER as string, process.env.PASS as string);
-console.log(resp);
-
+// const api = new ReverseApi();
+// await api.login(process.env.USER as string, process.env.PASS as string);
