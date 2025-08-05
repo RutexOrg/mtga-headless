@@ -1,0 +1,21 @@
+{
+  "name": "log_mtga",
+  "module": "index.ts",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/simple-oauth2": "^5.0.7",
+    "@types/tail": "^2.2.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2",
+    "simple-oauth2": "^5.1.0",
+    "tail": "^2.2.6"
+  }
+}
