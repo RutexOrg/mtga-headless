@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import axios, { Axios } from 'axios';
 import { ResourceOwnerPassword } from 'simple-oauth2';
-import {Socket} from "node:net"
+import tls, { TLSSocket } from "node:tls";
 
 dotenv.config();
 
@@ -14,29 +14,78 @@ interface IDoorBellV2 {
 }
 
 interface IProfileData {
-  accountID: string,
-  ccpaProtectData: boolean,
-  countryCode: string,
-  createdAt: string,
-  dataOptIn: boolean,
-  displayName: string,
-  email: string,
-  emailOptIn: boolean,
-  emailVerified: boolean,
-  externalID: string,
-  gameID: string,
-  languageCode: string,
-  parentalConsentState: number,
-  personaID: string,
-  presenceSettings: {
-    socialMode: string,
-  },
-  targetedAnalyticsOptOut: boolean,
+    accountID: string,
+    ccpaProtectData: boolean,
+    countryCode: string,
+    createdAt: string,
+    dataOptIn: boolean,
+    displayName: string,
+    email: string,
+    emailOptIn: boolean,
+    emailVerified: boolean,
+    externalID: string,
+    gameID: string,
+    languageCode: string,
+    parentalConsentState: number,
+    personaID: string,
+    presenceSettings: {
+        socialMode: string,
+    },
+    targetedAnalyticsOptOut: boolean,
 }
 
-// registry reader helper
+// todo: win-registry reader helper
 interface IApiParam {
     playerID: string;
+}
+
+interface IRemoteAddr {
+    host: string,
+    port: number,
+}
+
+class Connection {
+    private sock!: TLSSocket;
+    private remote: IRemoteAddr;
+
+    constructor(addr: IRemoteAddr) {
+        this.remote = addr;
+    }
+
+    public async connect(): Promise<void> {
+        await new Promise<void>((resolve, reject) => {
+            this.sock = tls.connect({
+                host: this.remote.host,
+                port: this.remote.port,
+                minVersion: "TLSv1.2"
+            }, () => {
+                console.log("Socket.authorized: ", this.sock.authorized);
+                console.log("Socket.encrypted: ", this.sock.encrypted);
+
+                if (!this.sock.authorized || !this.sock.encrypted) {
+                    reject(new Error("Failed to connect"));
+                    return;
+                }
+
+                console.log("TLS Conn ok");
+                resolve();
+            });
+
+            this.sock.on("data", (data) => {
+                console.log("Got from server:", data.length);
+            });
+
+            this.sock.on("end", () => {
+                console.log("Conn ended by server");
+            });
+
+            this.sock.on("error", (err) => {
+                console.log("Error");
+                reject(err);
+            });
+        });
+    }
+
 }
 
 export default class ReverseApi {
@@ -57,12 +106,12 @@ export default class ReverseApi {
     private static readonly version: string = "2025.50.20.9483"
 
     private accessToken: string = "";
-    private fdInfo = {
+    private remote: IRemoteAddr = {
         host: "",
         port: 0,
     }
-    
-    // private FDConnection
+
+    public connection!: Connection;
 
     private playerID: string
     private profileInfo!: IProfileData;
@@ -111,14 +160,14 @@ export default class ReverseApi {
         });
         console.info("Doorbell response:", resp.data.fdURI)
 
-        if(!resp?.data?.fdURI){
+        if (!resp?.data?.fdURI) {
             console.log("Looks like something is changed...")
             return false;
         }
         const regexResult = (/^tcp:\/\/([a-zA-Z0-9.-]+):(\d+)$/).exec(resp.data.fdURI);
-        
-        this.fdInfo.host = regexResult![1] as string;
-        this.fdInfo.port = parseInt(regexResult![2] as string);
+
+        this.remote.host = regexResult![1] as string;
+        this.remote.port = parseInt(regexResult![2] as string);
 
         return true;
     }
@@ -136,8 +185,9 @@ export default class ReverseApi {
         await this.saveProfileInfo();
     }
 
-    private async saveProfileInfo(){
+    private async saveProfileInfo() {
         this.profileInfo = await this.getProfileInfo();
+        console.log("Got profile info:", this.profileInfo)
     }
 
 
@@ -149,8 +199,10 @@ export default class ReverseApi {
         return (await this.client.get("profile")).data as IProfileData
     }
 
-    private async createFDConnection() {
-
+    public async createFDConnection() {
+        this.connection = new Connection(this.remote);
+        await this.connection.connect();
+        console.log("Connected");
     }
 }
 
@@ -160,3 +212,4 @@ const api = new ReverseApi({
 
 await api.login(process.env.USER as string, process.env.PASS as string);
 await api.ring();
+await api.createFDConnection();
